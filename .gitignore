@@ -1,0 +1,7 @@
+.idea/
+.vscode/
+.DS_Store
+pm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+node_modules
