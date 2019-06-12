@@ -77,9 +77,9 @@ class PageLogin extends React.Component {
           this.setState({
             loading: false,
           }, () => {
-            this.props.redirect('/')
             Service.setToken({token: res.token, expired_at: res.expired_at})
             this.props.setCurrentUser(res.user)
+            this.props.redirect('/')
           })
 
         }).catch(e => {

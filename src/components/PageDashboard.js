@@ -9,7 +9,7 @@ export default class PageDashboard extends React.Component {
   render() {
     return (
         <Container>
-        	<h1>Hello Dexp.io</h1>
+          Hello Dexp.io
         </Container>
     )
   }

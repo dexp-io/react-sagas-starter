@@ -1,5 +1,6 @@
 import _ from 'lodash'
 import axios from 'axios'
+import moment from 'moment'
 import {
   EventEmitter,
 } from 'fbemitter'
@@ -23,11 +24,34 @@ class Service {
     this._isReconnecting = false
     this._connected = false
     this._queue = []
-    this.store = null
     this._networkInfo = _.debounce(this.networkInfo, 300)
     this.event = new EventEmitter()
     this.user_id = null
     //this.connect()
+
+    // handle refresh token
+    this.refreshTokenTimeout = this.refreshTokenBackgroundTask()
+  }
+
+  refreshTokenBackgroundTask() {
+
+    if (this.token_expired_at && this.token) {
+
+      const timeInterval = moment(this.token_expired_at).unix() -
+          moment().unix()
+
+      const _this = this
+      setTimeout(function() {
+        _this.refreshToken()
+      }, timeInterval * 1000)
+    }
+  }
+
+  refreshToken() {
+    const q = `mutation refreshToken{ refreshToken{ token, expired_at } }`
+    this.request(q).then((res) => {
+      this.setToken(res.refreshToken)
+    })
   }
 
   setUserId(id) {
@@ -58,9 +82,6 @@ class Service {
     return this.event.addListener(NETWORK_STATUS, cb)
   }
 
-  setStore = (store) => {
-    this.store = store
-  }
   connect = () => {
     this.ws = new WebSocket(this.wsUrl)
     // clear timeout of reconnect
@@ -109,79 +130,6 @@ class Service {
     }
   }
 
-  register(payload) {
-    payload.allow_send_sms = payload.allow_send_sms || false
-    const query = `
-    mutation createUser($input: NewUser!){
-      createUser(input: $input)
-      {
-        id,
-        first_name
-        last_name
-      }
-    }`
-
-    const referral_token = localStorage.getItem('share')
-    if (referral_token) {
-      payload.referral_token = referral_token
-    }
-    return new Promise((resolve, reject) => {
-      this.request(query, {
-        input: payload,
-      }).then((res) => {
-        let user = _.get(res, 'createUser')
-        resolve(user)
-      }).catch(err => {
-        reject(err)
-      })
-    })
-  }
-
-  login(payload) {
-    const query = `mutation login {
-      login(input: {email: "${payload.email}", password: "${payload.password}"}){
-        token
-        expired_at
-        user{
-          id
-          first_name
-          last_name
-          email
-          avatar
-          street
-          city
-          state
-          zipcode
-          phone
-          allow_send_sms
-          facebook
-          twitter
-          instagram
-          created_at
-          roles{
-            id
-            name
-          }
-        }
-      }
-    }`
-
-    return new Promise((resolve, reject) => {
-      this.request(query).then((res) => {
-
-        if (res) {
-          this.setUserId(res.login.user.id)
-          this.setToken(res.login.token)
-          resolve(res.login.user)
-        } else {
-          resolve(null)
-        }
-      }).catch(err => {
-        reject(err)
-      })
-    })
-  }
-
   logout() {
 
     this.send({
@@ -193,7 +141,11 @@ class Service {
 
     this.token = null
     this.user_id = null
-    localStorage.removeItem('userToken')
+    if (this.refreshTokenTimeout) {
+      clearTimeout(this.refreshTokenTimeout)
+    }
+    localStorage.removeItem('token_expired_at')
+    localStorage.removeItem('token')
   }
 
   auth() {
@@ -243,9 +195,13 @@ class Service {
   }
 
   setToken(token = {}) {
-    localStorage.setItem('userToken', token.token)
+    console.log('to', token)
+    localStorage.setItem('token', token.token)
+    localStorage.setItem('token_expired_at', token.expired_at)
     this.token = token
     this.token_expired_at = token.expired_at
+    this.refreshTokenBackgroundTask()
+
     // auth to socket
     this.auth()
   }
@@ -254,7 +210,7 @@ class Service {
     if (this.token) {
       return this.token
     }
-    return localStorage.getItem('userToken')
+    return localStorage.getItem('token')
   }
 
   getTokenString() {
